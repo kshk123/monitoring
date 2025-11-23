@@ -1,0 +1,45 @@
+# Prometheus Configuration for Internet Speed Monitoring
+# This file should be placed in your Prometheus installation directory
+# Example: /opt/prometheus/prometheus.yml or ~/.prometheus/prometheus.yml
+
+global:
+  # How frequently to scrape targets by default
+  scrape_interval: 15s
+  
+  # How frequently to evaluate rules
+  evaluation_interval: 15s
+  
+  # scrape_timeout is set to the global default (10s)
+
+# Alertmanager configuration (optional - uncomment if using Alertmanager)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load rules once and periodically evaluate them (optional)
+# rule_files:
+#   - "first_rules.yml"
+#   - "second_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Internet Speed Monitoring Job
+  - job_name: 'internet_speed'
+    # Scrape every 30 minutes (matches the speedtest interval)
+    scrape_interval: 1800s
+    static_configs:
+      - targets: ['localhost:5000']
+
+# Remote Write Configuration (Grafana Cloud)
+# Security: Use environment variables for credentials instead of hardcoding
+# Set these before running Prometheus:
+#   export GRAFANA_USERNAME="1064956"
+#   export GRAFANA_PASSWORD="your-api-key-here"
+# Then run: prometheus --config.file=prometheus.yml
+remote_write:
+  - url: https://prometheus-prod-24-prod-eu-west-2.grafana.net/api/prom/push
+    basic_auth:
+      username: ${GRAFANA_USERNAME}
+      password: ${GRAFANA_PASSWORD}
