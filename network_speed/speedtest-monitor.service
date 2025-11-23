@@ -1,0 +1,36 @@
+# Systemd service file for Internet Speed Monitor
+# Copy this to: /etc/systemd/system/speedtest-monitor.service
+#
+# Installation:
+# 1. sudo cp speedtest-monitor.service /etc/systemd/system/
+# 2. sudo systemctl daemon-reload
+# 3. sudo systemctl enable speedtest-monitor
+# 4. sudo systemctl start speedtest-monitor
+#
+# Check status:
+# sudo systemctl status speedtest-monitor
+#
+# View logs:
+# sudo journalctl -u speedtest-monitor -f
+
+[Unit]
+Description=Internet Speed Monitoring Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/monitoring/network_speed
+Environment="PATH=/home/pi/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/pi/.cargo/bin/uv run src/SpeedTest.py --normal-interval 3600 --socket-timeout 60 --port 5000
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=speedtest-monitor
+
+[Install]
+WantedBy=multi-user.target
