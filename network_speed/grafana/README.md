@@ -19,9 +19,14 @@ Notifications are sent via email.
 # macOS
 brew install terraform
 
-# Linux
+# Linux (x86_64 / AMD64)
 wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
 unzip terraform_1.6.0_linux_amd64.zip
+sudo mv terraform /usr/local/bin/
+
+# Linux (ARM64 - for Raspberry Pi)
+wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_arm64.zip
+unzip terraform_1.6.0_linux_arm64.zip
 sudo mv terraform /usr/local/bin/
 ```
 
@@ -31,16 +36,26 @@ sudo mv terraform /usr/local/bin/
 - Your Grafana Cloud instance URL (e.g., `https://your-instance.grafana.net`)
 
 **API Key:**
-1. Go to Grafana Cloud
-2. Navigate to: Administration → Service accounts → Create service account
-3. Name: "Terraform Provisioning"
-4. Role: Admin
-5. Add token → Copy the key
+1. Go to your Grafana Cloud instance
+2. Click on your profile icon (bottom left) → **Administration** (or go directly via the left menu)
+3. Under **Users and access**, click **Service Accounts**
+4. Click **Add service account**
+5. Name: "Terraform Provisioning"
+6. Role: **Admin**
+7. Click **Create**
+8. Click **Add service account token**
+9. Name the token (e.g., "Terraform Token")
+10. Click **Generate token** → Copy the token immediately (you won't see it again!)
 
 **Prometheus Data Source UID:**
 1. Go to Grafana Cloud
-2. Navigate to: Connections → Data sources → Prometheus
-3. Copy the UID from the URL or settings page
+2. Navigate to: **Connections** → **Data sources**
+3. Look for the **Prometheus** data source that was automatically created for your Grafana Cloud stack
+   - It should be named something like "grafanacloud-prom" or "Prometheus"
+   - **Important:** This is the Grafana Cloud hosted Prometheus (where your metrics are sent via `remote_write`), NOT your local Raspberry Pi Prometheus
+4. Click on it and copy the **UID** from the settings page or URL
+   - The UID looks like a random string (e.g., `PBFA97CFB590B2093`)
+   - You can find it in the URL: `https://your-instance.grafana.net/datasources/edit/YOUR_UID_HERE`
 
 ### 3. Configure Variables
 
