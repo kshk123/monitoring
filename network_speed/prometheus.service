@@ -1,0 +1,48 @@
+# Systemd service file for Prometheus
+# Copy this to: /etc/systemd/system/prometheus.service
+#
+# Installation:
+# 1. Edit the Environment variables below with your actual Grafana credentials
+# 2. sudo cp prometheus.service /etc/systemd/system/
+# 3. sudo systemctl daemon-reload
+# 4. sudo systemctl enable prometheus
+# 5. sudo systemctl start prometheus
+#
+# Check status:
+# sudo systemctl status prometheus
+#
+# View logs:
+# sudo journalctl -u prometheus -f
+
+[Unit]
+Description=Prometheus Monitoring System
+Documentation=https://prometheus.io/docs/introduction/overview/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kshk123
+WorkingDirectory=/home/kshk123/CodeBase/apps/monitoring/network_speed
+
+# IMPORTANT: Replace these with your actual Grafana Cloud credentials
+Environment="GRAFANA_USERNAME=1064956"
+Environment="GRAFANA_PASSWORD=your-api-key-here"
+
+# Start Prometheus with the config file
+ExecStart=/usr/local/bin/prometheus --config.file=/home/kshk123/CodeBase/apps/monitoring/network_speed/prometheus/prometheus.yml --storage.tsdb.path=/home/kshk123/CodeBase/apps/monitoring/network_speed/data
+
+# Restart on failure
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prometheus
+
+# Security settings
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
