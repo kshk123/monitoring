@@ -159,8 +159,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
       })
     }
 
-    # Query B: Check if speed < threshold
-    # This reduces Query A to the last value and evaluates: is it < 63?
+    # Query B: Evaluates if Query A's last value is below the threshold
     # Returns: 1 (true) if below threshold, 0 (false) if above
     data {
       ref_id = "B"
@@ -173,21 +172,20 @@ resource "grafana_rule_group" "internet_speed_alerts" {
       datasource_uid = "__expr__"
 
       model = jsonencode({
-        expression = "A"           # Input: Query A (the speed metric)
-        reducer    = "last"        # Take the most recent value
+        expression = "A"
         refId      = "B"
-        type       = "threshold"   # Evaluate a threshold condition
+        type       = "threshold"
         conditions = [
           {
             evaluator = {
-              params = [var.download_threshold]  # Threshold: 63 Mbps
-              type   = "lt"                      # Condition: less than (<)
+              params = [var.download_threshold]
+              type   = "lt"
             }
             operator = {
               type = "and"
             }
             query = {
-              params = ["A"]       # Apply condition to Query A
+              params = ["A"]
             }
             reducer = {
               params = []
