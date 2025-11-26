@@ -138,7 +138,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
 
   rule {
     name      = "Slow Download Speed"
-    condition = "B"
+    condition = "C"
 
     # Query A: Get download speed
     data {
@@ -159,22 +159,43 @@ resource "grafana_rule_group" "internet_speed_alerts" {
       })
     }
 
-    # Query B: Evaluates if Query A's last value is below the threshold
-    # Returns: 1 (true) if below threshold, 0 (false) if above
+    # Query B: Reduce A to a single value (required for alerting)
     data {
       ref_id = "B"
 
       relative_time_range {
-        from = var.lookback_window
+        from = 0
         to   = 0
       }
 
       datasource_uid = "__expr__"
 
       model = jsonencode({
-        expression = "A"
         refId      = "B"
+        type       = "reduce"
+        expression = "A"
+        reducer    = "last"
+        settings   = {
+          mode = "strict"
+        }
+      })
+    }
+
+    # Query C: Threshold check on reduced value
+    data {
+      ref_id = "C"
+
+      relative_time_range {
+        from = 0
+        to   = 0
+      }
+
+      datasource_uid = "__expr__"
+
+      model = jsonencode({
+        refId      = "C"
         type       = "threshold"
+        expression = "B"
         conditions = [
           {
             evaluator = {
@@ -185,7 +206,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
               type = "and"
             }
             query = {
-              params = ["A"]
+              params = ["B"]
             }
             reducer = {
               params = []
@@ -197,7 +218,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
       })
     }
 
-    no_data_state  = "NoData"
+    no_data_state  = "OK"
     exec_err_state = "Error"
 
     for = "${local.failure_count_window}s"
