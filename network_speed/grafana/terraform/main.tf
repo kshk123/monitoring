@@ -159,7 +159,8 @@ resource "grafana_rule_group" "internet_speed_alerts" {
       })
     }
 
-    # Query B: Threshold check 
+    # Query B: Evaluates if Query A's last value is below the threshold
+    # Returns: 1 (true) if below threshold, 0 (false) if above
     data {
       ref_id = "B"
 
@@ -172,9 +173,8 @@ resource "grafana_rule_group" "internet_speed_alerts" {
 
       model = jsonencode({
         expression = "A"
-        reducer    = "last"
         refId      = "B"
-        type       = "reduce"
+        type       = "threshold"
         conditions = [
           {
             evaluator = {
@@ -185,7 +185,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
               type = "and"
             }
             query = {
-              params = []
+              params = ["A"]
             }
             reducer = {
               params = []
