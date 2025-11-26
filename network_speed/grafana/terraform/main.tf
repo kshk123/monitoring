@@ -176,7 +176,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
         expression = "A"
         reducer    = "last"
         settings   = {
-          mode = "strict"
+          mode = "dropNN"  # drop null/NaN values; alternative: replaceNN
         }
       })
     }
