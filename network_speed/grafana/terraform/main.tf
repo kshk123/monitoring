@@ -138,7 +138,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
 
   rule {
     name      = "Slow Download Speed"
-    condition = "C"
+    condition = "B"
 
     # Query A: Get download speed
     data {
@@ -159,7 +159,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
       })
     }
 
-    # Query B: Threshold check
+    # Query B: Threshold check 
     data {
       ref_id = "B"
 
@@ -174,7 +174,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
         expression = "A"
         reducer    = "last"
         refId      = "B"
-        type       = "threshold"
+        type       = "reduce"
         conditions = [
           {
             evaluator = {
@@ -185,45 +185,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
               type = "and"
             }
             query = {
-              params = ["A"]
-            }
-            reducer = {
               params = []
-              type   = "last"
-            }
-            type = "query"
-          }
-        ]
-      })
-    }
-
-    # Query C: Count consecutive failures
-    data {
-      ref_id = "C"
-
-      relative_time_range {
-        from = local.failure_count_window
-        to   = 0
-      }
-
-      datasource_uid = "__expr__"
-
-      model = jsonencode({
-        expression = "B"
-        reducer    = "count"
-        refId      = "C"
-        type       = "reduce"
-        conditions = [
-          {
-            evaluator = {
-              params = [var.consecutive_failures]
-              type   = "gte"
-            }
-            operator = {
-              type = "and"
-            }
-            query = {
-              params = ["C"]
             }
             reducer = {
               params = []
@@ -238,7 +200,7 @@ resource "grafana_rule_group" "internet_speed_alerts" {
     no_data_state  = "NoData"
     exec_err_state = "Error"
 
-    for = "0s"
+    for = "${local.failure_count_window}s"
 
     annotations = {
       description = "Download speed has been below ${var.download_threshold} Mbps for ${var.consecutive_failures} consecutive measurements. Current speed: {{ $values.A.Value }} Mbps"
