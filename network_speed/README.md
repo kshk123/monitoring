@@ -25,10 +25,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Then reload: source ~/.zshrc
 
 # Run directly (uv handles dependencies automatically)
-uv run src/SpeedTest.py
+uv run python src/speed_test.py
 
-# Run with options
-uv run src/SpeedTest.py --retry-interval 120 --normal-interval 3600 --socket-timeout 60 --port 8080
+# Run with custom config file
+uv run python src/speed_test.py --config /path/to/config.yaml
 
 # Run tests
 uv run pytest
@@ -37,8 +37,35 @@ uv run pytest
 ### Using pip
 
 ```bash
-pip install flask speedtest-cli
-python src/SpeedTest.py
+pip install flask speedtest-cli pyyaml fritzconnection
+python src/speed_test.py
+```
+
+### Installing as a package
+
+```bash
+pip install .
+speedtest-monitor --config config.yaml
+```
+
+## Configuration
+
+All settings are managed via `config.yaml`. See the file for available options:
+
+```yaml
+speedtest:
+  retry_interval: 60      # Seconds between retries when no data
+  normal_interval: 3600   # Seconds between normal speedtests (1 hour)
+  socket_timeout: 30      # HTTP request timeout
+  metrics_port: 5000      # Flask server port
+
+prometheus:
+  metrics_enabled: true   # Enable/disable metrics endpoint
+  auto_start: false       # Auto-start Prometheus server
+
+router_restart:
+  enabled: false          # Enable automatic router restart on slow speeds
+  # See config.yaml for full router restart options
 ```
 
 ## Usage
@@ -46,37 +73,24 @@ python src/SpeedTest.py
 ### Basic Usage (default settings)
 
 ```bash
-python src/SpeedTest.py
+python src/speed_test.py
 ```
 
 This will:
-- Start the Flask server on port 5000
-- Run speedtests every 30 minutes (1800 seconds)
+- Start the Flask server on port 5000 (configurable in config.yaml)
+- Run speedtests at intervals defined in config.yaml
 - Retry every 60 seconds if no data is available yet
 
-### Custom Configuration
+### Custom Configuration File
 
 ```bash
-# Custom retry interval (2 minutes when no data)
-python src/SpeedTest.py --retry-interval 120
-
-# Custom normal interval (1 hour between tests)
-python src/SpeedTest.py --normal-interval 3600
-
-# Custom socket timeout (60 seconds for HTTP requests)
-python src/SpeedTest.py --socket-timeout 60
-
-# Custom port
-python src/SpeedTest.py --port 8080
-
-# All options
-python src/SpeedTest.py --retry-interval 30 --normal-interval 900 --socket-timeout 45 --port 8080
+python src/speed_test.py --config /path/to/custom-config.yaml
 ```
 
 ### View Help
 
 ```bash
-python src/SpeedTest.py --help
+python src/speed_test.py --help
 ```
 
 ## Metrics Endpoint
@@ -170,12 +184,17 @@ scrape_configs:
 
 ## Configuration Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--retry-interval` | 60 | Seconds to wait between retries when no data available |
-| `--normal-interval` | 1800 | Seconds to wait between normal speedtests (30 min) |
-| `--socket-timeout` | 30 | Socket timeout for individual HTTP requests (prevents hangs) |
-| `--port` | 5000 | Port for Flask web server |
+All options are configured via `config.yaml`:
+
+| Section | Option | Default | Description |
+|---------|--------|---------|-------------|
+| `speedtest` | `retry_interval` | 60 | Seconds to wait between retries when no data available |
+| `speedtest` | `normal_interval` | 3600 | Seconds to wait between normal speedtests (1 hour) |
+| `speedtest` | `socket_timeout` | 30 | Socket timeout for individual HTTP requests |
+| `speedtest` | `metrics_port` | 5000 | Port for Flask web server |
+| `prometheus` | `metrics_enabled` | true | Enable/disable the /metrics endpoint |
+| `prometheus` | `auto_start` | false | Auto-start Prometheus server |
+| `router_restart` | `enabled` | false | Enable automatic router restart feature |
 
 ## Development
 
@@ -184,11 +203,20 @@ scrape_configs:
 ```
 network_speed/
 ├── src/
-│   └── SpeedTest.py      # Main application
+│   ├── __init__.py           # Package marker
+│   ├── speed_test.py         # Main application
+│   ├── prometheus_manager.py # Prometheus lifecycle management
+│   └── router_restart.py     # Router restart functionality
 ├── tests/
-│   └── test_speedtest.py # Test suite
-├── pyproject.toml        # Project configuration
-└── README.md            # This file
+│   ├── test_speedtest.py     # Speed test tests
+│   ├── test_prometheus_manager.py
+│   ├── test_router_restart.py
+│   └── test_wsgi_mode.py     # WSGI compatibility tests
+├── prometheus/
+│   └── prometheus.yml        # Prometheus config
+├── config.yaml               # Main configuration file
+├── pyproject.toml            # Project configuration
+└── README.md                 # This file
 ```
 
 ### Contributing

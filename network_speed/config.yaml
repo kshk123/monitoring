@@ -1,0 +1,77 @@
+# Main configuration file for Internet Speed Monitoring Service
+
+# Prometheus Settings
+prometheus:
+  # Enable/disable Prometheus metrics exposure on /metrics endpoint
+  metrics_enabled: true
+  
+  # Auto-start Prometheus server when SpeedTest script starts
+  auto_start: true
+  
+  # Path to Prometheus configuration file
+  config_file: "prometheus/prometheus.yml"
+  
+  # Prometheus binary path (set to null to use 'prometheus' from PATH)
+  binary_path: null
+  
+  # Prometheus data directory
+  data_dir: "prometheus/data"
+  
+  # Prometheus listen port
+  port: 9090
+
+# Speed Test Settings
+speedtest:
+  # Retry interval in seconds when no data yet
+  retry_interval: 60
+  
+  # Normal interval in seconds between speed tests
+  normal_interval: 3600  # 1 hour
+  
+  # Socket timeout in seconds for HTTP requests
+  socket_timeout: 30
+  
+  # Port to run Flask metrics server on
+  metrics_port: 5000
+
+# Router Restart Settings
+router_restart:
+  # Enable or disable router restart functionality
+  enabled: true
+  
+  fritzbox:
+    # FRITZ!Box router IP address
+    ip: "192.168.178.1"
+    
+    # FRITZ!Box username (leave empty for default)
+    username: ""
+    
+    # 1Password reference to retrieve FRITZ!Box password
+    # Format: op://VaultName/ItemName/FieldName
+    # Example: op://Private/FritzBox/password
+    onepassword_ref: "op://Private/FritzBox/password"
+  
+  policy:
+    # Speed threshold in Mbps - restart if speed drops below this
+    speed_threshold_mbps: 50
+    
+    # Number of consecutive slow speed measurements before triggering restart
+    consecutive_failures: 3
+    
+    # Time window when restarts are allowed (24-hour format)
+    # Restarts will only happen between these hours to avoid disrupting during daytime
+    time_window_start: "02:00"
+    time_window_end: "04:00"
+  
+  state:
+    # File to store restart state (consecutive failure counter, last restart time, etc.)
+    state_file: "/tmp/router_restart_state.json"
+  
+  logging:
+    # Enable logging of restart events
+    enabled: true
+    
+    # Log file location
+    # Note: Default uses ~/.local/log/ which is user-writable.
+    # /var/log/ requires root and will fall back to console-only logging.
+    log_file: "~/.local/log/router_restart.log"

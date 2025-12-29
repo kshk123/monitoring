@@ -1,12 +1,14 @@
 [project]
 name = "internet-speed-monitor"
 version = "0.1.0"
-description = "Internet speed monitoring service with Prometheus metrics"
+description = "Internet speed monitoring service with optional Prometheus metrics"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "flask>=2.3.0",
     "speedtest-cli>=2.1.3",
+    "fritzconnection>=1.13.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -16,7 +18,7 @@ dev = [
 ]
 
 [project.scripts]
-speedtest-monitor = "src.SpeedTest:main"
+speedtest-monitor = "src.speed_test:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -24,11 +26,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+# Include config files in wheel for runtime defaults
+artifacts = [
+    "config.yaml",
+    "prometheus/",
+]
 
-[dependency-groups]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "config.yaml",
+    "prometheus/",
 ]
 
 [tool.pytest.ini_options]

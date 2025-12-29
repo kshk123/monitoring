@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
-from SpeedTest import app, take_speedtest_sample, speedtest_thread, metrics_lock
-import SpeedTest
+from speed_test import app, take_speedtest_sample, speedtest_thread, metrics_lock
+import speed_test
 
 
 class TestSpeedTestSample(unittest.TestCase):
@@ -17,10 +17,10 @@ class TestSpeedTestSample(unittest.TestCase):
     
     def setUp(self):
         """Reset global variables before each test"""
-        SpeedTest.download_speed = None
-        SpeedTest.upload_speed = None
+        speed_test.download_speed = None
+        speed_test.upload_speed = None
     
-    @patch('SpeedTest.speedtest.Speedtest')
+    @patch('speed_test.speedtest.Speedtest')
     def test_successful_speedtest(self, mock_speedtest_class):
         """Test that speedtest successfully updates global variables"""
         mock_st = Mock()
@@ -33,10 +33,10 @@ class TestSpeedTestSample(unittest.TestCase):
         mock_st.get_best_server.assert_called_once()
         mock_st.download.assert_called_once()
         mock_st.upload.assert_called_once()
-        self.assertAlmostEqual(SpeedTest.download_speed, 100.0, places=1)
-        self.assertAlmostEqual(SpeedTest.upload_speed, 50.0, places=1)
+        self.assertAlmostEqual(speed_test.download_speed, 100.0, places=1)
+        self.assertAlmostEqual(speed_test.upload_speed, 50.0, places=1)
     
-    @patch('SpeedTest.speedtest.Speedtest')
+    @patch('speed_test.speedtest.Speedtest')
     def test_speedtest_with_lock(self, mock_speedtest_class):
         """Test that speedtest updates are thread-safe"""
         mock_st = Mock()
@@ -45,12 +45,12 @@ class TestSpeedTestSample(unittest.TestCase):
         mock_speedtest_class.return_value = mock_st
         
         with metrics_lock:
-            initial_download = SpeedTest.download_speed
+            initial_download = speed_test.download_speed
         
         take_speedtest_sample()
         
         with metrics_lock:
-            final_download = SpeedTest.download_speed
+            final_download = speed_test.download_speed
         
         self.assertIsNone(initial_download)
         self.assertIsNotNone(final_download)
@@ -63,8 +63,15 @@ class TestMetricsEndpoint(unittest.TestCase):
         """Setup Flask test client"""
         self.client = app.test_client()
         self.client.testing = True
-        SpeedTest.download_speed = None
-        SpeedTest.upload_speed = None
+        speed_test.download_speed = None
+        speed_test.upload_speed = None
+        # Avoid starting background thread during unit tests
+        self._thread_patcher = patch('speed_test.start_speedtest_thread')
+        self._thread_patcher.start()
+    
+    def tearDown(self):
+        """Stop any active patchers."""
+        self._thread_patcher.stop()
     
     def test_metrics_no_data(self):
         """Test metrics endpoint when no data is available"""
@@ -79,8 +86,8 @@ class TestMetricsEndpoint(unittest.TestCase):
     def test_metrics_with_data(self):
         """Test metrics endpoint with actual speed data"""
         with metrics_lock:
-            SpeedTest.download_speed = 150.5
-            SpeedTest.upload_speed = 25.3
+            speed_test.download_speed = 150.5
+            speed_test.upload_speed = 25.3
         
         response = self.client.get('/metrics')
         self.assertEqual(response.status_code, 200)
@@ -92,8 +99,8 @@ class TestMetricsEndpoint(unittest.TestCase):
     def test_metrics_format(self):
         """Test that metrics are in Prometheus format"""
         with metrics_lock:
-            SpeedTest.download_speed = 100.0
-            SpeedTest.upload_speed = 50.0
+            speed_test.download_speed = 100.0
+            speed_test.upload_speed = 50.0
         
         response = self.client.get('/metrics')
         data = response.data.decode('utf-8')
@@ -113,13 +120,13 @@ class TestSpeedTestThread(unittest.TestCase):
     
     def setUp(self):
         """Reset global variables"""
-        SpeedTest.download_speed = None
-        SpeedTest.upload_speed = None
-        SpeedTest.RETRY_INTERVAL = 1  # Short intervals for testing
-        SpeedTest.NORMAL_INTERVAL = 2
+        speed_test.download_speed = None
+        speed_test.upload_speed = None
+        speed_test.retry_interval = 1  # Short intervals for testing
+        speed_test.normal_interval = 2
     
-    @patch('SpeedTest.time.sleep')
-    @patch('SpeedTest.take_speedtest_sample')
+    @patch('speed_test.time.sleep')
+    @patch('speed_test.take_speedtest_sample')
     def test_retry_interval_when_no_data(self, mock_sample, mock_sleep):
         """Test that retry interval is used when no data exists"""
         mock_sample.side_effect = [None, KeyboardInterrupt()]
@@ -131,15 +138,15 @@ class TestSpeedTestThread(unittest.TestCase):
         
         mock_sleep.assert_called()
         first_call_interval = mock_sleep.call_args_list[0][0][0]
-        self.assertEqual(first_call_interval, SpeedTest.RETRY_INTERVAL)
+        self.assertEqual(first_call_interval, speed_test.retry_interval)
     
-    @patch('SpeedTest.time.sleep')
-    @patch('SpeedTest.take_speedtest_sample')
+    @patch('speed_test.time.sleep')
+    @patch('speed_test.take_speedtest_sample')
     def test_normal_interval_with_data(self, mock_sample, mock_sleep):
         """Test that normal interval is used after data is available"""
         def set_speed():
-            SpeedTest.download_speed = 100.0
-            SpeedTest.upload_speed = 50.0
+            speed_test.download_speed = 100.0
+            speed_test.upload_speed = 50.0
         
         mock_sample.side_effect = [set_speed(), KeyboardInterrupt()]
         
@@ -151,11 +158,11 @@ class TestSpeedTestThread(unittest.TestCase):
         mock_sleep.assert_called()
         if len(mock_sleep.call_args_list) > 0:
             first_call_interval = mock_sleep.call_args_list[0][0][0]
-            self.assertEqual(first_call_interval, SpeedTest.NORMAL_INTERVAL)
+            self.assertEqual(first_call_interval, speed_test.normal_interval)
     
-    @patch('SpeedTest.time.sleep')
-    @patch('SpeedTest.take_speedtest_sample')
-    @patch('SpeedTest.logging')
+    @patch('speed_test.time.sleep')
+    @patch('speed_test.take_speedtest_sample')
+    @patch('speed_test.logging')
     def test_config_retrieval_error_handling(self, mock_logging, mock_sample, mock_sleep):
         """Test ConfigRetrievalError is handled properly"""
         import speedtest
@@ -169,9 +176,9 @@ class TestSpeedTestThread(unittest.TestCase):
         mock_logging.warning.assert_called()
         mock_sleep.assert_called()
     
-    @patch('SpeedTest.time.sleep')
-    @patch('SpeedTest.take_speedtest_sample')
-    @patch('SpeedTest.logging')
+    @patch('speed_test.time.sleep')
+    @patch('speed_test.take_speedtest_sample')
+    @patch('speed_test.logging')
     def test_generic_exception_handling(self, mock_logging, mock_sample, mock_sleep):
         """Test generic exceptions are handled properly"""
         mock_sample.side_effect = [Exception("Test error"), KeyboardInterrupt()]
@@ -190,8 +197,8 @@ class TestThreadSafety(unittest.TestCase):
     
     def setUp(self):
         """Reset globals"""
-        SpeedTest.download_speed = None
-        SpeedTest.upload_speed = None
+        speed_test.download_speed = None
+        speed_test.upload_speed = None
     
     def test_concurrent_access(self):
         """Test that concurrent reads/writes don't cause issues"""
@@ -200,15 +207,15 @@ class TestThreadSafety(unittest.TestCase):
         def writer():
             for i in range(10):
                 with metrics_lock:
-                    SpeedTest.download_speed = float(i)
-                    SpeedTest.upload_speed = float(i * 2)
+                    speed_test.download_speed = float(i)
+                    speed_test.upload_speed = float(i * 2)
                 time.sleep(0.001)
         
         def reader():
             for _ in range(10):
                 with metrics_lock:
-                    dl = SpeedTest.download_speed
-                    ul = SpeedTest.upload_speed
+                    dl = speed_test.download_speed
+                    ul = speed_test.upload_speed
                     if dl is not None and ul is not None:
                         results.append((dl, ul))
                 time.sleep(0.001)
