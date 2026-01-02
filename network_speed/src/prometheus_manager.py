@@ -90,7 +90,8 @@ class PrometheusManager:
                 logging.error(f"Error stopping Prometheus: {e}")
             try:
                 self._process.kill()
-            except:
+            except Exception:
+                # Intentionally ignore errors while forcefully terminating the process during cleanup.
                 pass
         finally:
             self._process = None

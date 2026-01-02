@@ -1,7 +1,7 @@
 """Tests for PrometheusManager startup/shutdown behavior."""
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import subprocess
 from pathlib import Path
 import sys

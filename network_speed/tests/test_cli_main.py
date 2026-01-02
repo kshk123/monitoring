@@ -1,7 +1,7 @@
 """Tests for CLI main() function and partial config handling."""
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import sys
 import tempfile
 import os

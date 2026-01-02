@@ -1,7 +1,7 @@
 """Tests for RouterRestartManager including config resolution, state handling, and time windows."""
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch
 import json
 import tempfile
 from pathlib import Path
@@ -126,7 +126,7 @@ class TestRouterRestartStateHandling(unittest.TestCase):
                 "state": {"state_file": f"{tmpdir}/nonexistent.json"}
             })
             
-            manager = RouterRestartManager(config)
+            RouterRestartManager(config)
             
             self.assertEqual(manager.state["consecutive_failures"], 0)
             self.assertIsNone(manager.state["last_restart_time"])
@@ -360,9 +360,8 @@ class TestRouterRestartLoggingHandlers(unittest.TestCase):
             initial_count = len(initial_file_handlers)
             
             # Create manager multiple times
-            manager1 = RouterRestartManager(config)
-            manager2 = RouterRestartManager(config)
-            manager3 = RouterRestartManager(config)
+            for _ in range(3):
+                RouterRestartManager(config)
             
             # Count file handlers after
             final_file_handlers = [
@@ -422,10 +421,10 @@ class TestRouterRestartMetrics(unittest.TestCase):
     
     def setUp(self):
         """Reset metrics and clear instances before each test."""
-        import router_restart
+        from router_restart import _instances_lock, _active_instances
         # Clear active instances
-        with router_restart._instances_lock:
-            router_restart._active_instances.clear()
+        with _instances_lock:
+            _active_instances.clear()
     
     def test_get_router_restart_metrics_returns_none_when_no_instances(self):
         """Test that get_router_restart_metrics returns None when no manager exists."""
@@ -554,8 +553,8 @@ class TestRouterRestartMetrics(unittest.TestCase):
     @patch('router_restart.logging')
     def test_close_unregisters_instance(self, mock_logging):
         """Test that close() properly unregisters the instance."""
-        import router_restart
         from router_restart import RouterRestartManager, get_router_restart_metrics
+        from router_restart import _instances_lock, _active_instances
         
         with tempfile.TemporaryDirectory() as tmpdir:
             config = make_test_config({
@@ -567,14 +566,14 @@ class TestRouterRestartMetrics(unittest.TestCase):
             
             # Verify it's registered
             self.assertIsNotNone(get_router_restart_metrics())
-            with router_restart._instances_lock:
-                self.assertIn(manager, router_restart._active_instances)
+            with _instances_lock:
+                self.assertIn(manager, _active_instances)
             
             # Close and verify it's unregistered
             manager.close()
             
-            with router_restart._instances_lock:
-                self.assertNotIn(manager, router_restart._active_instances)
+            with _instances_lock:
+                self.assertNotIn(manager, _active_instances)
             self.assertIsNone(get_router_restart_metrics())
     
     @patch('router_restart.logging')
@@ -600,8 +599,8 @@ class TestRouterRestartMetrics(unittest.TestCase):
     @patch('router_restart.logging')
     def test_duplicate_registration_prevented(self, mock_logging):
         """Test that the same instance cannot be registered twice."""
-        import router_restart
         from router_restart import RouterRestartManager, _register_instance
+        from router_restart import _instances_lock, _active_instances
         
         with tempfile.TemporaryDirectory() as tmpdir:
             config = make_test_config({
@@ -616,14 +615,13 @@ class TestRouterRestartMetrics(unittest.TestCase):
             _register_instance(manager)
             
             # Should only be in the set once
-            with router_restart._instances_lock:
-                count = len(router_restart._active_instances)
+            with _instances_lock:
+                count = len(_active_instances)
             self.assertEqual(count, 1)
     
     @patch('router_restart.logging')
     def test_del_unregisters_instance(self, mock_logging):
         """Test that __del__ properly unregisters the instance."""
-        import router_restart
         from router_restart import RouterRestartManager, get_router_restart_metrics
         import gc
         

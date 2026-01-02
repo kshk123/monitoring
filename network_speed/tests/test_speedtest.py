@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import threading
 import time
 import math
@@ -246,17 +246,17 @@ class TestMetricsIntegration(unittest.TestCase):
         self._thread_patcher = patch('speed_test.start_speedtest_thread')
         self._thread_patcher.start()
         # Reset router restart module state
-        import router_restart
-        with router_restart._instances_lock:
-            router_restart._active_instances.clear()
+        from router_restart import _instances_lock, _active_instances
+        with _instances_lock:
+            _active_instances.clear()
     
     def tearDown(self):
         """Stop any active patchers and clean up."""
         self._thread_patcher.stop()
         # Clean up router restart instances
-        import router_restart
-        with router_restart._instances_lock:
-            router_restart._active_instances.clear()
+        from router_restart import _instances_lock, _active_instances
+        with _instances_lock:
+            _active_instances.clear()
     
     def test_metrics_without_router_restart_manager(self):
         """Test /metrics only shows speedtest metrics when no router manager exists."""
@@ -393,7 +393,6 @@ class TestMetricsIntegration(unittest.TestCase):
                         # Metric line: name{labels} value or name value
                         parts = line.split(' ')
                         self.assertEqual(len(parts), 2, f"Invalid metric line: {line}")
-                        metric_name_with_labels = parts[0]
                         value = parts[1]
                         
                         # Value should be a number or 'nan'
