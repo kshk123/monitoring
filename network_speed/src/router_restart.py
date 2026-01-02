@@ -240,7 +240,7 @@ class RouterRestartManager:
 
     def _validate_onepassword_ref(self):
         """Validate the 1Password reference format to prevent unsafe inputs."""
-        pattern = r"^op://[A-Za-z0-9 ._\\-]+/[A-Za-z0-9 ._\\-]+/[A-Za-z0-9 ._\\-]+$"
+        pattern = r"^op://[A-Za-z0-9 ._-]+/[A-Za-z0-9 ._-]+/[A-Za-z0-9 ._-]+$"
         if not re.fullmatch(pattern, self.onepassword_ref or ""):
             raise ValueError("Invalid 1Password reference format")
     
