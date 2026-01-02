@@ -8,10 +8,70 @@ import json
 import logging
 import os
 import subprocess
+import threading
+import weakref
 from datetime import datetime
 from pathlib import Path
 
 from fritzconnection import FritzConnection
+
+
+# Registry of active RouterRestartManager instances for metrics aggregation
+_instances_lock = threading.RLock()
+_active_instances = weakref.WeakSet()
+
+
+def _register_instance(instance):
+    """Register a RouterRestartManager instance for metrics tracking.
+    
+    Prevents duplicate registration of the same instance.
+    """
+    with _instances_lock:
+        _active_instances.add(instance)
+
+
+def _unregister_instance(instance):
+    """Unregister a RouterRestartManager instance."""
+    with _instances_lock:
+        _active_instances.discard(instance)
+
+
+def get_router_restart_metrics():
+    """Get aggregated router restart metrics from all active instances.
+    
+    Returns:
+        dict with restart_total, restart_last_timestamp, restart_failures_total,
+        and router_id (if single router) or None (if multiple/none).
+        Returns None if no instances are registered.
+    """
+    with _instances_lock:
+        instances = list(_active_instances)
+        if not instances:
+            return None
+        
+        # Collect metrics from each instance while holding their individual locks
+        total = 0
+        failures = 0
+        timestamps = []
+        
+        for inst in instances:
+            with inst._metrics_lock:
+                total += inst._restart_total
+                failures += inst._restart_failures_total
+                if inst._restart_last_timestamp is not None:
+                    timestamps.append(inst._restart_last_timestamp)
+        
+        last_timestamp = max(timestamps) if timestamps else None
+        
+        # Include router identifier if single instance
+        router_id = instances[0].fritzbox_ip if len(instances) == 1 else None
+        
+        return {
+            "restart_total": total,
+            "restart_last_timestamp": last_timestamp,
+            "restart_failures_total": failures,
+            "router_id": router_id,
+        }
 
 
 class RouterRestartManager:
@@ -50,8 +110,34 @@ class RouterRestartManager:
         # Expand ~ in path for user home directory without relying on Path (test mocking)
         self.log_file = os.path.expanduser(configured_log)
         
+        # Instance-level metrics (thread-safe via _instances_lock in aggregation)
+        self._restart_total = 0
+        self._restart_last_timestamp = None
+        self._restart_failures_total = 0
+        self._metrics_lock = threading.Lock()
+        
         self._setup_logging()
         self.state = self._load_state()
+        
+        # Track if this instance is registered (for close() idempotency)
+        self._closed = False
+        
+        # Register this instance for metrics aggregation
+        _register_instance(self)
+    
+    def close(self):
+        """Unregister this instance from metrics aggregation.
+        
+        Should be called when the manager is no longer needed to prevent
+        stale metrics and memory leaks. Safe to call multiple times.
+        """
+        if not self._closed:
+            _unregister_instance(self)
+            self._closed = True
+    
+    def __del__(self):
+        """Ensure instance is unregistered when garbage collected."""
+        self.close()
     
     def _setup_logging(self):
         """Setup logging based on configuration.
@@ -175,10 +261,21 @@ class RouterRestartManager:
             fc.call_action("DeviceConfig1", "Reboot")
             
             logging.info("FRITZ!Box reboot initiated successfully")
+            
+            # Record successful restart in instance metrics
+            with self._metrics_lock:
+                self._restart_total += 1
+                self._restart_last_timestamp = datetime.now().timestamp()
+            
             return True
             
         except Exception as e:
             logging.error(f"Failed to restart FRITZ!Box: {e}")
+            
+            # Record failed restart attempt in instance metrics
+            with self._metrics_lock:
+                self._restart_failures_total += 1
+            
             return False
     
     def check_and_restart(self, current_speed_mbps):

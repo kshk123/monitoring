@@ -11,11 +11,11 @@ import yaml
 # Use try/except for imports to support both direct execution and package installation
 try:
     from .prometheus_manager import PrometheusManager
-    from .router_restart import RouterRestartManager
+    from .router_restart import RouterRestartManager, get_router_restart_metrics
 except ImportError:
     # Direct execution (python src/speed_test.py)
     from prometheus_manager import PrometheusManager
-    from router_restart import RouterRestartManager
+    from router_restart import RouterRestartManager, get_router_restart_metrics
 
 app = Flask(__name__)
 download_speed = None
@@ -233,6 +233,32 @@ def metrics():
         "# TYPE internet_speed_upload_mbps gauge",
         f"internet_speed_upload_mbps {upload_val}",
     ]
+    
+    # Add router restart metrics only if manager is actually running
+    # (not just enabled in config, but actually initialized)
+    if _router_restart_manager is not None:
+        try:
+            restart_metrics = get_router_restart_metrics()
+            # get_router_restart_metrics returns None if no instances registered
+            if restart_metrics is not None:
+                lines.extend([
+                    "# HELP router_restart_total Total number of successful router restarts",
+                    "# TYPE router_restart_total counter",
+                    f"router_restart_total {restart_metrics['restart_total']}",
+                    "# HELP router_restart_failures_total Total number of failed router restart attempts",
+                    "# TYPE router_restart_failures_total counter",
+                    f"router_restart_failures_total {restart_metrics['restart_failures_total']}",
+                ])
+                # Only add timestamp if we've had at least one restart
+                if restart_metrics['restart_last_timestamp'] is not None:
+                    lines.extend([
+                        "# HELP router_restart_last_timestamp Unix timestamp of last successful router restart",
+                        "# TYPE router_restart_last_timestamp gauge",
+                        f"router_restart_last_timestamp {restart_metrics['restart_last_timestamp']}",
+                    ])
+        except Exception as e:
+            logging.warning(f"Failed to get router restart metrics: {e}")
+    
     return Response('\n'.join(lines), mimetype='text/plain')
 
 def main():
@@ -270,6 +296,8 @@ def main():
     try:
         app.run(host='0.0.0.0', port=port)
     finally:
+        if _router_restart_manager:
+            _router_restart_manager.close()
         if _prometheus_manager:
             _prometheus_manager.stop()
 

@@ -417,5 +417,234 @@ class TestRouterRestartLoggingHandlers(unittest.TestCase):
             self.assertIn(str(Path.home()), str(manager.state_file))
 
 
+class TestRouterRestartMetrics(unittest.TestCase):
+    """Test router restart metrics tracking."""
+    
+    def setUp(self):
+        """Reset metrics and clear instances before each test."""
+        import router_restart
+        # Clear active instances
+        with router_restart._instances_lock:
+            router_restart._active_instances.clear()
+    
+    def test_get_router_restart_metrics_returns_none_when_no_instances(self):
+        """Test that get_router_restart_metrics returns None when no manager exists."""
+        from router_restart import get_router_restart_metrics
+        
+        metrics = get_router_restart_metrics()
+        self.assertIsNone(metrics)
+    
+    @patch('router_restart.logging')
+    def test_get_router_restart_metrics_returns_dict_with_instance(self, mock_logging):
+        """Test that get_router_restart_metrics returns expected structure with active manager."""
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            metrics = get_router_restart_metrics()
+            
+            self.assertIsInstance(metrics, dict)
+            self.assertIn("restart_total", metrics)
+            self.assertIn("restart_last_timestamp", metrics)
+            self.assertIn("restart_failures_total", metrics)
+            self.assertIn("router_id", metrics)
+            self.assertEqual(metrics["router_id"], "192.168.1.1")
+    
+    @patch('router_restart.FritzConnection')
+    @patch('router_restart.logging')
+    def test_successful_restart_increments_counter(self, mock_logging, mock_fc_class):
+        """Test that successful restart increments the counter."""
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        
+        # Mock FritzConnection
+        mock_fc = Mock()
+        mock_fc_class.return_value = mock_fc
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            # Verify initial state
+            initial_metrics = get_router_restart_metrics()
+            self.assertEqual(initial_metrics["restart_total"], 0)
+            
+            # Mock password retrieval
+            with patch.object(manager, '_get_fritzbox_password', return_value='password'):
+                result = manager._restart_fritzbox()
+            
+            self.assertTrue(result)
+            
+            # Check metrics incremented
+            new_metrics = get_router_restart_metrics()
+            self.assertEqual(new_metrics["restart_total"], 1)
+            self.assertIsNotNone(new_metrics["restart_last_timestamp"])
+    
+    @patch('router_restart.FritzConnection')
+    @patch('router_restart.logging')
+    def test_failed_restart_increments_failure_counter(self, mock_logging, mock_fc_class):
+        """Test that failed restart increments the failure counter."""
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        
+        # Mock FritzConnection to raise exception
+        mock_fc_class.side_effect = Exception("Connection failed")
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            # Verify initial state
+            initial_metrics = get_router_restart_metrics()
+            self.assertEqual(initial_metrics["restart_failures_total"], 0)
+            
+            # Mock password retrieval
+            with patch.object(manager, '_get_fritzbox_password', return_value='password'):
+                result = manager._restart_fritzbox()
+            
+            self.assertFalse(result)
+            
+            # Check failure counter incremented
+            new_metrics = get_router_restart_metrics()
+            self.assertEqual(new_metrics["restart_failures_total"], 1)
+    
+    @patch('router_restart.logging')
+    def test_multiple_instances_aggregate_metrics(self, mock_logging):
+        """Test that multiple instances have their metrics aggregated."""
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config1 = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state1.json"},
+                "logging": {"enabled": False}
+            })
+            config1["router_restart"]["fritzbox"]["ip"] = "192.168.1.1"
+            
+            config2 = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state2.json"},
+                "logging": {"enabled": False}
+            })
+            config2["router_restart"]["fritzbox"]["ip"] = "192.168.1.2"
+            
+            manager1 = RouterRestartManager(config1)
+            manager2 = RouterRestartManager(config2)
+            
+            # Set different metrics on each
+            manager1._restart_total = 3
+            manager2._restart_total = 2
+            
+            # Aggregated total should be 5
+            metrics = get_router_restart_metrics()
+            self.assertEqual(metrics["restart_total"], 5)
+            # Router ID should be None for multiple routers
+            self.assertIsNone(metrics["router_id"])
+    
+    @patch('router_restart.logging')
+    def test_close_unregisters_instance(self, mock_logging):
+        """Test that close() properly unregisters the instance."""
+        import router_restart
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            # Verify it's registered
+            self.assertIsNotNone(get_router_restart_metrics())
+            with router_restart._instances_lock:
+                self.assertIn(manager, router_restart._active_instances)
+            
+            # Close and verify it's unregistered
+            manager.close()
+            
+            with router_restart._instances_lock:
+                self.assertNotIn(manager, router_restart._active_instances)
+            self.assertIsNone(get_router_restart_metrics())
+    
+    @patch('router_restart.logging')
+    def test_close_is_idempotent(self, mock_logging):
+        """Test that close() can be called multiple times safely."""
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            # Close multiple times - should not raise
+            manager.close()
+            manager.close()
+            manager.close()
+            
+            self.assertIsNone(get_router_restart_metrics())
+    
+    @patch('router_restart.logging')
+    def test_duplicate_registration_prevented(self, mock_logging):
+        """Test that the same instance cannot be registered twice."""
+        import router_restart
+        from router_restart import RouterRestartManager, _register_instance
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            # Try to register again
+            _register_instance(manager)
+            _register_instance(manager)
+            
+            # Should only be in the set once
+            with router_restart._instances_lock:
+                count = len(router_restart._active_instances)
+            self.assertEqual(count, 1)
+    
+    @patch('router_restart.logging')
+    def test_del_unregisters_instance(self, mock_logging):
+        """Test that __del__ properly unregisters the instance."""
+        import router_restart
+        from router_restart import RouterRestartManager, get_router_restart_metrics
+        import gc
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = make_test_config({
+                "state": {"state_file": f"{tmpdir}/state.json"},
+                "logging": {"enabled": False}
+            })
+            
+            manager = RouterRestartManager(config)
+            
+            # Verify it's registered
+            self.assertIsNotNone(get_router_restart_metrics())
+            
+            # Delete the manager and force garbage collection
+            del manager
+            gc.collect()
+            
+            # Should be unregistered
+            self.assertIsNone(get_router_restart_metrics())
+
+
 if __name__ == '__main__':
     unittest.main()

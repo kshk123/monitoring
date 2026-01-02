@@ -233,5 +233,182 @@ class TestThreadSafety(unittest.TestCase):
             self.assertAlmostEqual(ul, dl * 2, places=1)
 
 
+class TestMetricsIntegration(unittest.TestCase):
+    """Integration tests for /metrics endpoint with router restart metrics."""
+    
+    def setUp(self):
+        """Setup Flask test client and reset state."""
+        self.client = app.test_client()
+        self.client.testing = True
+        speed_test.download_speed = None
+        speed_test.upload_speed = None
+        # Avoid starting background thread during unit tests
+        self._thread_patcher = patch('speed_test.start_speedtest_thread')
+        self._thread_patcher.start()
+        # Reset router restart module state
+        import router_restart
+        with router_restart._instances_lock:
+            router_restart._active_instances.clear()
+    
+    def tearDown(self):
+        """Stop any active patchers and clean up."""
+        self._thread_patcher.stop()
+        # Clean up router restart instances
+        import router_restart
+        with router_restart._instances_lock:
+            router_restart._active_instances.clear()
+    
+    def test_metrics_without_router_restart_manager(self):
+        """Test /metrics only shows speedtest metrics when no router manager exists."""
+        with metrics_lock:
+            speed_test.download_speed = 100.0
+            speed_test.upload_speed = 50.0
+        
+        response = self.client.get('/metrics')
+        data = response.data.decode('utf-8')
+        
+        # Should have speedtest metrics
+        self.assertIn('internet_speed_download_mbps 100.0', data)
+        self.assertIn('internet_speed_upload_mbps 50.0', data)
+        
+        # Should NOT have router restart metrics
+        self.assertNotIn('router_restart_total', data)
+        self.assertNotIn('router_restart_failures_total', data)
+    
+    @patch('router_restart.logging')
+    def test_metrics_with_router_restart_manager(self, mock_logging):
+        """Test /metrics includes router restart metrics when manager is active."""
+        import tempfile
+        from router_restart import RouterRestartManager
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a router restart manager with all required fields
+            config = {
+                "router_restart": {
+                    "enabled": True,
+                    "fritzbox": {
+                        "ip": "192.168.1.1",
+                        "username": "admin",
+                        "onepassword_ref": "op://Test/Router/password"
+                    },
+                    "policy": {
+                        "speed_threshold_mbps": 50,
+                        "consecutive_failures": 3,
+                        "time_window_start": "02:00",
+                        "time_window_end": "04:00"
+                    },
+                    "state": {
+                        "state_file": f"{tmpdir}/state.json"
+                    },
+                    "logging": {
+                        "enabled": False,
+                        "log_file": f"{tmpdir}/router.log"
+                    }
+                }
+            }
+            
+            # Set up speed_test module with our manager
+            manager = RouterRestartManager(config)
+            speed_test._router_restart_manager = manager
+            
+            try:
+                with metrics_lock:
+                    speed_test.download_speed = 100.0
+                    speed_test.upload_speed = 50.0
+                
+                response = self.client.get('/metrics')
+                data = response.data.decode('utf-8')
+                
+                # Should have speedtest metrics
+                self.assertIn('internet_speed_download_mbps 100.0', data)
+                
+                # Should have router restart metrics in Prometheus format
+                self.assertIn('# HELP router_restart_total', data)
+                self.assertIn('# TYPE router_restart_total counter', data)
+                self.assertIn('router_restart_total 0', data)
+                
+                self.assertIn('# HELP router_restart_failures_total', data)
+                self.assertIn('# TYPE router_restart_failures_total counter', data)
+                self.assertIn('router_restart_failures_total 0', data)
+            finally:
+                speed_test._router_restart_manager = None
+    
+    @patch('router_restart.logging')
+    def test_metrics_prometheus_format_valid(self, mock_logging):
+        """Test that /metrics output is valid Prometheus text format."""
+        import tempfile
+        from router_restart import RouterRestartManager
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = {
+                "router_restart": {
+                    "enabled": True,
+                    "fritzbox": {
+                        "ip": "192.168.1.1",
+                        "username": "admin",
+                        "onepassword_ref": "op://Test/Router/password"
+                    },
+                    "policy": {
+                        "speed_threshold_mbps": 50,
+                        "consecutive_failures": 3,
+                        "time_window_start": "02:00",
+                        "time_window_end": "04:00"
+                    },
+                    "state": {
+                        "state_file": f"{tmpdir}/state.json"
+                    },
+                    "logging": {
+                        "enabled": False,
+                        "log_file": f"{tmpdir}/router.log"
+                    }
+                }
+            }
+            
+            manager = RouterRestartManager(config)
+            manager._restart_total = 5
+            manager._restart_last_timestamp = 1700000000.0
+            speed_test._router_restart_manager = manager
+            
+            try:
+                with metrics_lock:
+                    speed_test.download_speed = 100.0
+                    speed_test.upload_speed = 50.0
+                
+                response = self.client.get('/metrics')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.mimetype, 'text/plain')
+                
+                data = response.data.decode('utf-8')
+                lines = data.strip().split('\n')
+                
+                # Validate each line is valid Prometheus format
+                for line in lines:
+                    if line.startswith('#'):
+                        # Comment/metadata line
+                        self.assertTrue(
+                            line.startswith('# HELP') or line.startswith('# TYPE'),
+                            f"Invalid metadata line: {line}"
+                        )
+                    else:
+                        # Metric line: name{labels} value or name value
+                        parts = line.split(' ')
+                        self.assertEqual(len(parts), 2, f"Invalid metric line: {line}")
+                        metric_name_with_labels = parts[0]
+                        value = parts[1]
+                        
+                        # Value should be a number or 'nan'
+                        if value != 'nan':
+                            try:
+                                float(value)
+                            except ValueError:
+                                self.fail(f"Invalid metric value: {value} in line: {line}")
+                
+                # Verify specific values
+                self.assertIn('router_restart_total 5', data)
+                self.assertIn('router_restart_last_timestamp 1700000000.0', data)
+            finally:
+                speed_test._router_restart_manager = None
+
+
 if __name__ == '__main__':
     unittest.main()
