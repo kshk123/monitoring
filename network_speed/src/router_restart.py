@@ -7,6 +7,7 @@ Monitors internet speed and automatically restarts FRITZ!Box router when speed i
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import weakref
@@ -109,6 +110,9 @@ class RouterRestartManager:
         configured_log = log_config.get("log_file", str(default_log))
         # Expand ~ in path for user home directory without relying on Path (test mocking)
         self.log_file = os.path.expanduser(configured_log)
+        
+        # Validate 1Password reference format early to avoid unsafe inputs
+        self._validate_onepassword_ref()
         
         # Instance-level metrics (thread-safe via _instances_lock in aggregation)
         self._restart_total = 0
@@ -231,8 +235,14 @@ class RouterRestartManager:
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            logging.error(f"Failed to retrieve password from 1Password: {e}")
+            logging.error("Failed to retrieve password from 1Password (returncode=%s).", e.returncode)
             raise
+
+    def _validate_onepassword_ref(self):
+        """Validate the 1Password reference format to prevent unsafe inputs."""
+        pattern = r"^op://[A-Za-z0-9 ._\\-]+/[A-Za-z0-9 ._\\-]+/[A-Za-z0-9 ._\\-]+$"
+        if not re.fullmatch(pattern, self.onepassword_ref or ""):
+            raise ValueError("Invalid 1Password reference format")
     
     def _is_within_time_window(self):
         """Check if current time is within the allowed restart window."""
@@ -270,7 +280,7 @@ class RouterRestartManager:
             return True
             
         except Exception as e:
-            logging.error(f"Failed to restart FRITZ!Box: {e}")
+            logging.error("Failed to restart FRITZ!Box (%s).", type(e).__name__)
             
             # Record failed restart attempt in instance metrics
             with self._metrics_lock:
