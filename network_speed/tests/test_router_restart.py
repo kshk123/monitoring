@@ -126,7 +126,7 @@ class TestRouterRestartStateHandling(unittest.TestCase):
                 "state": {"state_file": f"{tmpdir}/nonexistent.json"}
             })
             
-            RouterRestartManager(config)
+            manager = RouterRestartManager(config)
             
             self.assertEqual(manager.state["consecutive_failures"], 0)
             self.assertIsNone(manager.state["last_restart_time"])
