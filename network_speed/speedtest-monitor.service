@@ -24,12 +24,8 @@ User=pi
 WorkingDirectory=/home/pi/monitoring/network_speed
 Environment="PATH=/home/pi/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
 
-# Customize these command-line arguments as needed:
-# --retry-interval: Seconds to wait when no data (default: 60)
-# --normal-interval: Seconds between normal tests (default: 1800)
-# --socket-timeout: Timeout for HTTP requests (default: 30)
-# --port: Port for Flask server (default: 5000)
-ExecStart=/home/pi/.cargo/bin/uv run src/SpeedTest.py --retry-interval 60 --normal-interval 3600 --socket-timeout 60 --port 5000
+# Configuration is managed via config.yaml
+ExecStart=/home/pi/.cargo/bin/uv run src/speed_test.py --config config.yaml
 
 Restart=always
 RestartSec=10
